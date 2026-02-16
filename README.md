@@ -33,7 +33,7 @@ https://api.allorigins.win/raw?url=
 
 ## Публикация на GitHub Pages
 
-В репозитории есть workflow `.github/workflows/pages.yml`, который автоматически публикует сайт на GitHub Pages при пуше в `main`.
+В репозитории есть workflow `.github/workflows/pages.yml`, который автоматически публикует сайт на GitHub Pages при пуше в `main` или `master`.
 
 После первого запуска workflow:
 
