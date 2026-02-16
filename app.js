@@ -13,6 +13,11 @@ const priceSelectors = ['price', 'cost', 'full_price'];
 const installmentSelectors = ['installment', 'price_installment', 'credit'];
 const urlSelectors = ['url', 'link'];
 const titleSelectors = ['title', 'name'];
+const defaultProxies = [
+  'https://api.allorigins.win/raw?url=',
+  'https://r.jina.ai/http://',
+  'https://r.jina.ai/https://',
+];
 
 function setStatus(message, type = 'info') {
   statusEl.textContent = message;
@@ -36,18 +41,58 @@ function parseRubPrice(value) {
   return Number.isFinite(number) ? Math.round(number) : null;
 }
 
-async function fetchText(url, corsProxy) {
-  if (corsProxy) {
-    const glue = corsProxy.includes('?') || corsProxy.endsWith('=') ? '' : '/';
-    const proxied = `${corsProxy}${glue}${encodeURIComponent(url)}`;
-    const r = await fetch(proxied);
-    if (!r.ok) throw new Error(`Ошибка загрузки через прокси: ${r.status}`);
-    return r.text();
+function buildProxyUrl(targetUrl, proxy) {
+  if (proxy.includes('r.jina.ai/http://') || proxy.includes('r.jina.ai/https://')) {
+    const normalized = targetUrl.replace(/^https?:\/\//, '');
+    return `${proxy}${normalized}`;
   }
 
+  const glue = proxy.includes('?') || proxy.endsWith('=') ? '' : '/';
+  return `${proxy}${glue}${encodeURIComponent(targetUrl)}`;
+}
+
+async function fetchDirect(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Ошибка загрузки: ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.text();
+}
+
+async function fetchViaProxy(url, proxy) {
+  const proxiedUrl = buildProxyUrl(url, proxy);
+  const res = await fetch(proxiedUrl);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+
+async function fetchText(url, corsProxy) {
+  const attempts = [];
+
+  try {
+    return await fetchDirect(url);
+  } catch (error) {
+    attempts.push(`прямой запрос: ${error.message}`);
+  }
+
+  if (corsProxy) {
+    try {
+      return await fetchViaProxy(url, corsProxy);
+    } catch (error) {
+      attempts.push(`пользовательский прокси (${corsProxy}): ${error.message}`);
+    }
+  }
+
+  for (const proxy of defaultProxies) {
+    if (proxy === corsProxy) continue;
+    try {
+      return await fetchViaProxy(url, proxy);
+    } catch (error) {
+      attempts.push(`резервный прокси (${proxy}): ${error.message}`);
+    }
+  }
+
+  throw new Error(
+    `Failed to fetch. Не удалось получить ${url}. Попытки: ${attempts.join('; ')}`,
+  );
 }
 
 function findFirstText(node, tags) {
@@ -177,7 +222,7 @@ checkBtn.addEventListener('click', async () => {
   tableBody.innerHTML = '';
 
   try {
-    setStatus('Загружаю страницу курсов и XML-фид…', 'info');
+    setStatus('Загружаю страницу курсов и XML-фид (с авто-переключением на CORS-прокси при необходимости)…', 'info');
 
     const [coursesHtml, feedXml] = await Promise.all([
       fetchText(coursesUrl, corsProxy),
